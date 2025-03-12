@@ -18,35 +18,37 @@ export class LevelManager {
         this.collectibleInterval = 3;
         this.platformInterval = 5;
         this.obstacleSpeed = 0;
+        this.isPlayerReady = false; // New flag
         console.log('LevelManager initialized:', this);
     }
 
+    setPlayerReady() {
+        this.isPlayerReady = true;
+    }
+
     update(delta) {
+        if (!this.isPlayerReady) return; // Wait for player to be ready
         this.obstacleSpeed = this.player.speed;
         this.logger.log(`LevelManager updating, delta: ${delta}, obstacleSpeed: ${this.obstacleSpeed}`);
 
-        // Spawn obstacles
         this.lastObstacleTime += delta;
         if (this.lastObstacleTime >= this.obstacleInterval) {
             this.spawnObstacle();
-            this.lastObstacleTime -= this.obstacleInterval; // Subtract interval to prevent drift
+            this.lastObstacleTime -= this.obstacleInterval;
         }
 
-        // Spawn collectibles
         this.lastCollectibleTime += delta;
         if (this.lastCollectibleTime >= this.collectibleInterval) {
             this.spawnCollectible();
             this.lastCollectibleTime -= this.collectibleInterval;
         }
 
-        // Spawn platforms
         this.lastPlatformTime += delta;
         if (this.lastPlatformTime >= this.platformInterval) {
             this.spawnPlatform();
             this.lastPlatformTime -= this.platformInterval;
         }
 
-        // Move and clean up obstacles
         this.obstacles.forEach(obstacle => {
             obstacle.position.z += this.obstacleSpeed * delta;
             if (obstacle.position.z > this.player.mesh.position.z + 15) {
@@ -55,7 +57,6 @@ export class LevelManager {
             }
         });
 
-        // Move and clean up barriers
         this.barriers.forEach(barrier => {
             barrier.position.z += this.obstacleSpeed * delta;
             if (barrier.position.z > this.player.mesh.position.z + 15) {
@@ -64,7 +65,6 @@ export class LevelManager {
             }
         });
 
-        // Move and clean up collectibles
         this.collectibles.forEach(collectible => {
             collectible.position.z += this.obstacleSpeed * delta;
             if (collectible.position.z > this.player.mesh.position.z + 15) {
@@ -73,7 +73,6 @@ export class LevelManager {
             }
         });
 
-        // Move and clean up platforms
         this.platforms.forEach(platform => {
             platform.position.z += this.obstacleSpeed * delta;
             if (platform.position.z > this.player.mesh.position.z + 15) {
@@ -149,10 +148,10 @@ export class LevelManager {
                 1,
                 this.player.mesh.position.z - 20
             );
-            const collectibleBox = new THREE.Box3().setFromObject(collectible);
-            validPosition = !this.obstacles.some(obs => {
-                const obsBox = new THREE.Box3().setFromObject(obs);
-                return obsBox.intersectsBox(collectibleBox);
+            const collectibleBox = new THREE.Box3().setFromObject(collectible).expandByScalar(0.2);
+            validPosition = ![...this.obstacles, ...this.platforms].some(obj => {
+                const objBox = new THREE.Box3().setFromObject(obj);
+                return objBox.intersectsBox(collectibleBox);
             }) && !this.collectibles.some(col => {
                 const colBox = new THREE.Box3().setFromObject(col);
                 return colBox.intersectsBox(collectibleBox);
@@ -185,19 +184,8 @@ export class LevelManager {
         this.logger.log(`Spawned platform at: ${JSON.stringify(platform.position)}`);
     }
 
-    getObstacles() {
-        return this.obstacles;
-    }
-
-    getBarriers() {
-        return this.barriers;
-    }
-
-    getCollectibles() {
-        return this.collectibles;
-    }
-
-    getPlatforms() {
-        return this.platforms;
-    }
+    getObstacles() { return this.obstacles; }
+    getBarriers() { return this.barriers; }
+    getCollectibles() { return this.collectibles; }
+    getPlatforms() { return this.platforms; }
 }

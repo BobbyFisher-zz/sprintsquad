@@ -21,14 +21,12 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 console.log('Renderer created and appended:', renderer);
 
-// Make canvas responsive
 window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
 });
 
-// Add a plane for the track extending into the distance
 const planeGeometry = new THREE.PlaneGeometry(20, 200);
 const planeMaterial = new THREE.MeshBasicMaterial({ color: 0x808080, side: THREE.DoubleSide });
 const plane = new THREE.Mesh(planeGeometry, planeMaterial);
@@ -38,7 +36,6 @@ plane.position.z = 0;
 scene.add(plane);
 console.log('Plane added to scene at:', plane.position);
 
-// Initialize game state variables
 let player;
 let levelManager;
 let inputManager;
@@ -46,13 +43,7 @@ let logger;
 let gameState = { gameOver: false };
 let survivalTime = 0;
 let score = 0;
-let tokenCount = 0;
 
-// Make score and tokenCount globally accessible
-window.score = score;
-window.tokenCount = tokenCount;
-
-// Add score UI
 const scoreContainer = document.createElement('div');
 scoreContainer.style.position = 'absolute';
 scoreContainer.style.top = '10px';
@@ -64,11 +55,9 @@ scoreContainer.style.fontFamily = 'Arial';
 const scoreDisplay = document.createElement('div');
 scoreDisplay.innerText = 'Score: 0';
 scoreContainer.appendChild(scoreDisplay);
-
 document.body.appendChild(scoreContainer);
 console.log('Score display added');
 
-// Add token progress bar
 const progressBarContainer = document.createElement('div');
 progressBarContainer.style.position = 'absolute';
 progressBarContainer.style.bottom = '10px';
@@ -87,10 +76,6 @@ progressBar.style.width = '0%';
 progressBarContainer.appendChild(progressBar);
 console.log('Token progress bar added');
 
-// Make progressBar accessible globally
-window.progressBar = progressBar;
-
-// Add Game Over UI with Restart button
 const gameOverContainer = document.createElement('div');
 gameOverContainer.style.position = 'absolute';
 gameOverContainer.style.top = '50%';
@@ -143,7 +128,6 @@ gameOverContainer.appendChild(restartButton);
 document.body.appendChild(gameOverContainer);
 console.log('Game Over display with Restart button added');
 
-// Add character selection menu
 const menuContainer = document.createElement('div');
 menuContainer.style.position = 'absolute';
 menuContainer.style.top = '50%';
@@ -199,30 +183,19 @@ characterButtons.forEach(char => {
 document.body.appendChild(menuContainer);
 console.log('Character selection menu added');
 
-// Set initial camera position to look down the track
 camera.position.z = 10;
 camera.position.y = 5;
 camera.lookAt(0, 0, 0);
 console.log('Camera positioned:', camera.position);
 
-// Animation loop
 function animate(time) {
     requestAnimationFrame(animate);
     const delta = Math.min(0.1, (time - lastTime) / 1000);
     lastTime = time;
 
-    if (!gameState.gameOver && player) {
+    if (!gameState.gameOver && player && player.isReady()) {
         survivalTime += delta;
-        
-        // Update score and token count from global variables
-        score = window.score;
-        tokenCount = window.tokenCount;
-        
-        // Update UI elements every frame
         scoreDisplay.innerText = `Score: ${score}`;
-        const progress = (tokenCount / 5) * 100;
-        progressBar.style.width = `${progress}%`;
-
         player.update(camera, inputManager.getActions(), levelManager.getObstacles(), levelManager.getBarriers(), scene, gameState, delta, logger);
         levelManager.update(delta);
         plane.position.z = player.mesh.position.z;
@@ -235,19 +208,14 @@ function animate(time) {
     }
 
     renderer.render(scene, camera);
-    console.log('Frame rendered, player position:', player ? player.mesh.position : 'No player', 'plane position:', plane.position, 'score:', score, 'token count:', tokenCount);
+    console.log('Frame rendered, player position:', player ? player.mesh.position : 'No player', 'plane position:', plane.position, 'score:', score);
 }
 
 function initializeGame(characterName, color) {
     gameState.gameOver = false;
     survivalTime = 0;
     score = 0;
-    tokenCount = 0;
-    
-    // Reset global variables
-    window.score = 0;
-    window.tokenCount = 0;
-    
+
     scoreDisplay.innerText = 'Score: 0';
     progressBar.style.width = '0%';
 
@@ -259,44 +227,46 @@ function initializeGame(characterName, color) {
     switch (characterName) {
         case 'Dax':
             player = new DaxController('Dax', scene);
-            player.mesh.material.color.set(color);
             break;
         case 'Nox':
             player = new NoxController('Nox', scene);
-            player.mesh.material.color.set(color);
             break;
         case 'Buggy':
             player = new BuggyController('Buggy', scene);
-            player.mesh.material.color.set(color);
             break;
         case 'Teag':
             player = new TeagController('Teag', scene);
-            player.mesh.material.color.set(color);
             break;
         default:
             player = new DaxController('Dax', scene);
-            player.mesh.material.color.set(0x8B4513);
     }
 
-    player.mesh.position.set(0, 0.75, 0);
-    scene.add(player.mesh);
-    console.log('Player added to scene:', player.mesh.position);
+    // Wait for the model to load using Promise
+    player.loadPromise.then(() => {
+        player.mesh.traverse(child => {
+            if (child.isMesh) child.material.color.set(color);
+        });
+        player.mesh.position.set(0, 0.75, 0);
+        scene.add(player.mesh);
+        console.log('Player added to scene:', player.mesh.position);
 
-    inputManager = new InputManager();
-    levelManager = new LevelManager(scene, player, gameState);
-    player.setLevelManager(levelManager);
-    logger = new Logger();
-    console.log(`${characterName} game initialized`);
+        inputManager = new InputManager();
+        levelManager = new LevelManager(scene, player, gameState);
+        player.setLevelManager(levelManager);
+        logger = new Logger();
+        console.log(`${characterName} game initialized`);
 
-    lastTime = performance.now();
-    animate(lastTime);
+        lastTime = performance.now();
+        animate(lastTime);
+    }).catch(error => {
+        console.error(`Model loading failed for ${characterName}:`, error);
+    });
 }
 
 let lastTime = performance.now();
 document.body.style.backgroundColor = 'black';
 console.log('Animation loop setup, waiting for character selection');
 
-// Add download log button
 const downloadButton = document.createElement('button');
 downloadButton.textContent = 'Download Log';
 downloadButton.style.position = 'absolute';
@@ -312,17 +282,11 @@ downloadButton.onclick = () => {
 document.body.appendChild(downloadButton);
 console.log('Download button added');
 
-// Reset game function
 function resetGame() {
     gameState.gameOver = false;
     survivalTime = 0;
     score = 0;
-    tokenCount = 0;
-    
-    // Reset global variables
-    window.score = 0;
-    window.tokenCount = 0;
-    
+
     scoreDisplay.innerText = 'Score: 0';
     progressBar.style.width = '0%';
     gameOverContainer.style.display = 'none';
@@ -334,6 +298,7 @@ function resetGame() {
     player.abilityTimer = 0;
     player.isAbilityActive = false;
     player.abilityEnabled = false;
+    player.tokenCount = 0;
     levelManager.obstacles.forEach(obstacle => scene.remove(obstacle));
     levelManager.obstacles = [];
     levelManager.barriers.forEach(barrier => scene.remove(barrier));

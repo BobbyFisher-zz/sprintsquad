@@ -4,13 +4,30 @@ import { Logger } from './Logger.js';
 export class PlayerController {
     constructor(type, scene) {
         this.logger = new Logger();
-        this.type = type; // Ensure type is set correctly
+        this.type = type;
         this.scene = scene;
-        this.mesh = new THREE.Mesh(
-            new THREE.BoxGeometry(1, 1, 1),
-            new THREE.MeshBasicMaterial({ color: 0x8B4513 })
-        );
-        this.mesh.position.y = 0.5;
+        this.mesh = null;
+        this.isModelLoaded = false;
+        this.loadPromise = new Promise((resolve) => {
+            const loader = new window.GLTFLoad();
+            loader.load(
+                'models/generic_character.gltf',
+                (gltf) => {
+                    this.mesh = gltf.scene;
+                    this.mesh.scale.set(1, 1, 1);
+                    this.mesh.position.y = 0.5;
+                    this.isModelLoaded = true;
+                    this.logger.log(`Loaded generic model for ${this.type}`);
+                    resolve();
+                },
+                undefined,
+                (error) => {
+                    console.error(`Error loading generic model for ${this.type}:`, error);
+                    resolve(); // Resolve even on error to avoid hanging
+                }
+            );
+        });
+
         this.speed = 7;
         this.acceleration = 0.1;
         this.jumpForce = 10;
@@ -21,6 +38,7 @@ export class PlayerController {
         this.abilityTimer = 0;
         this.isAbilityActive = false;
         this.abilityEnabled = false;
+        this.tokenCount = 0;
         this.loggingEnabled = true;
         this.isSliding = false;
         this.hasBoosted = false;
@@ -29,7 +47,13 @@ export class PlayerController {
         console.log('PlayerController initialized with type:', this.type);
     }
 
+    // Check if model is loaded
+    isReady() {
+        return this.isModelLoaded;
+    }
+
     jump() {
+        if (!this.mesh) return;
         if (this.isGrounded) {
             this.velocity.y = this.jumpForce;
             this.isGrounded = false;
@@ -46,6 +70,7 @@ export class PlayerController {
     }
 
     useAbility(scene) {
+        if (!this.mesh) return;
         if (this.abilityEnabled) {
             this.logger.log(`Attempting to use ability for ${this.type}. Timer: ${this.abilityTimer}`);
             if (this.abilityTimer <= 0) {
@@ -65,7 +90,7 @@ export class PlayerController {
                     this.scene.remove(shortcut);
                     this.isAbilityActive = false;
                     this.abilityEnabled = false;
-                    tokenCount = 0;
+                    this.tokenCount = 0;
                     progressBar.style.width = '0%';
                     this.logger.log(`${this.type} ability ended.`);
                 }, 5000);
@@ -78,6 +103,7 @@ export class PlayerController {
     }
 
     checkCollision(object) {
+        if (!this.mesh) return false;
         const pBox = new THREE.Box3().setFromObject(this.mesh);
         const oBox = new THREE.Box3().setFromObject(object);
         this.logger.log(`Checking collision - Player Box: ${JSON.stringify(pBox)}, Object Box: ${JSON.stringify(oBox)}, Player Pos: ${JSON.stringify(this.mesh.position)}, Object Pos: ${JSON.stringify(object.position)}`);
@@ -85,6 +111,8 @@ export class PlayerController {
     }
 
     update(camera, actions, obstacles, barriers, scene, gameState, delta, logger) {
+        if (!this.mesh) return;
+
         const prevX = this.mesh.position.x;
         const prevZ = this.mesh.position.z;
 
@@ -97,7 +125,6 @@ export class PlayerController {
         this.mesh.position.y += this.velocity.y * delta;
         logger.log(`Position update - Velocity Y: ${this.velocity.y.toFixed(3)}, Position Y: ${this.mesh.position.y.toFixed(3)}, Mesh Y: ${this.mesh.position.y.toFixed(3)}`);
 
-        // Ground and platform detection
         let isOnPlatform = false;
         if (this.mesh.position.y <= 0.51 && this.velocity.y <= 0 && !this.isSliding) {
             this.mesh.position.y = 0.5;
@@ -155,7 +182,6 @@ export class PlayerController {
             this.abilityTimer -= delta;
         }
 
-        // Handle collisions with obstacles and collectibles
         barriers.forEach(barrier => {
             if (this.checkCollision(barrier)) {
                 this.mesh.position.x = prevX;
@@ -187,18 +213,15 @@ export class PlayerController {
                 this.scene.remove(collectible);
                 this.levelManager.collectibles = this.levelManager.collectibles.filter(c => c !== collectible);
                 if (type === 'coin') {
-                    // Update score directly here
                     score += value;
                     this.logger.log(`Collected coin worth ${value} points, new score: ${score}`);
                 } else if (type === 'token' && character.toLowerCase() === this.type.toLowerCase()) {
-                    // Update token count directly here
-                    tokenCount += 1;
-                    this.logger.log(`Token collected for ${this.type}, count: ${tokenCount}`);
-                    if (tokenCount >= 5) {
+                    this.tokenCount += 1;
+                    progressBar.style.width = `${(this.tokenCount / 5) * 100}%`;
+                    this.logger.log(`Token collected for ${this.type}, count: ${this.tokenCount}`);
+                    if (this.tokenCount >= 5) {
                         this.abilityEnabled = true;
                         this.logger.log(`Ability enabled for ${this.type} with 5 tokens!`);
-                    } else {
-                        this.logger.log(`Token progress for ${this.type}: ${tokenCount}/5`);
                     }
                 } else {
                     this.logger.log(`Token not collected: character ${character} does not match player type ${this.type}`);

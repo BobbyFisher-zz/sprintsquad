@@ -5,7 +5,26 @@ import { Logger } from './Logger.js';
 export class NoxController extends PlayerController {
     constructor(type, scene) {
         super(type, scene);
-        this.mesh.material.color.set(0xA52A2A);
+        this.logger.log('NoxController initializing...');
+
+        const loader = new window.GLTFLoad();
+        loader.load(
+            'models/nox.gltf',
+            (gltf) => {
+                if (this.mesh) this.scene.remove(this.mesh);
+                this.mesh = gltf.scene;
+                this.mesh.scale.set(1, 1, 1);
+                this.mesh.position.set(this.mesh.position.x, 0.5, this.mesh.position.z);
+                this.mesh.traverse(child => {
+                    if (child.isMesh) child.material.color.set(0xA52A2A);
+                });
+                this.scene.add(this.mesh);
+                this.logger.log('Nox model loaded');
+            },
+            undefined,
+            (error) => console.error('Error loading Nox model:', error)
+        );
+
         this.abilityCooldown = 8;
         this.abilityTimer = 0;
         this.isAbilityActive = false;
@@ -29,7 +48,7 @@ export class NoxController extends PlayerController {
                     this.canBreakObstacles = false;
                     this.isAbilityActive = false;
                     this.abilityEnabled = false;
-                    tokenCount = 0;
+                    this.tokenCount = 0;
                     progressBar.style.width = '0%';
                     this.logger.log('Beast Burst ended.');
                 }, 3000);
@@ -42,6 +61,7 @@ export class NoxController extends PlayerController {
     }
 
     checkCollision(object) {
+        if (!this.mesh) return false;
         if (this.canBreakObstacles && object.material.color.getHex() === 0xff0000) {
             this.logger.log('Obstacle broken by Beast Burst!');
             return false;

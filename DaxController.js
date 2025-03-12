@@ -5,7 +5,23 @@ import { Logger } from './Logger.js';
 export class DaxController extends PlayerController {
     constructor(type, scene) {
         super(type, scene);
-        this.mesh.material.color.set(0x8B4513);
+        this.logger.log('DaxController initializing...');
+
+        // Override the generic model with Dax's specific model
+        const loader = new window.GLTFLoad();
+        loader.load(
+            'models/dax/dax.gltf',
+            (gltf) => {
+                if (this.mesh) this.scene.remove(this.mesh); // Remove generic mesh if it loaded
+                this.mesh = gltf.scene;
+                this.mesh.scale.set(1, 1, 1);
+                this.mesh.position.y = 0.5;
+                this.logger.log('Dax model loaded');
+            },
+            undefined,
+            (error) => console.error('Error loading Dax model:', error)
+        );
+
         this.abilityCooldown = 10;
         this.abilityTimer = 0;
         this.isAbilityActive = false;
@@ -14,6 +30,7 @@ export class DaxController extends PlayerController {
     }
 
     useAbility(scene) {
+        if (!this.mesh) return;
         if (this.abilityEnabled) {
             this.logger.log(`Attempting to use Pathfinder. Timer: ${this.abilityTimer}`);
             if (this.abilityTimer <= 0) {
@@ -33,7 +50,7 @@ export class DaxController extends PlayerController {
                     this.scene.remove(shortcut);
                     this.isAbilityActive = false;
                     this.abilityEnabled = false;
-                    tokenCount = 0;
+                    this.tokenCount = 0;
                     progressBar.style.width = '0%';
                     this.logger.log('Pathfinder ended.');
                 }, 5000);
