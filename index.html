@@ -5,22 +5,164 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sprint Squad</title>
     <style>
-        body { margin: 0; overflow: hidden; }
+        body { margin: 0; overflow: hidden; background-color: #000; }
         canvas { display: block; }
+        #debug-info {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            z-index: 1000;
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <!-- Debug info panel -->
+    <div id="debug-info"></div>
+    
     <script type="importmap">
         {
             "imports": {
-                "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+                "three/examples/jsm/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/controls/OrbitControls.js",
+                "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/loaders/GLTFLoader.js"
+            }
+        }
+    </script>
+    <script type="module">
+        // Enable debug mode
+        window.DEBUG = true;
+        
+        // Make GLTFLoader available globally - moved to the top for priority loading
+        try {
+            const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+            window.GLTFLoader = GLTFLoader;
+            console.log('GLTFLoader imported and assigned to window.GLTFLoader');
+            
+            // For backward compatibility with any code using GLTFLoad
+            window.GLTFLoad = GLTFLoader;
+            console.log('Also assigned to window.GLTFLoad for backward compatibility');
+            
+            // Add a check function to verify GLTFLoader is available
+            window.isGLTFLoaderReady = function() {
+                return typeof window.GLTFLoader === 'function';
+            };
+            
+            // Dispatch an event when GLTFLoader is ready
+            window.dispatchEvent(new Event('gltfloaderready'));
+        } catch (error) {
+            console.error('Error importing GLTFLoader:', error);
+            const debugInfo = document.getElementById('debug-info');
+            if (debugInfo) {
+                debugInfo.style.display = 'block';
+                debugInfo.innerHTML += `<div>ERROR: ${error.message}</div>`;
+            }
+        }
+        
+        // Create texture directory and placeholder textures
+        async function createPlaceholderTextures() {
+            const textures = {
+                'floor': createTextureCanvas(512, 512, '#808080', true),
+                'obstacle1': createTextureCanvas(256, 256, '#FF4500', false),
+                'obstacle2': createTextureCanvas(256, 256, '#8B0000', false),
+                'obstacle3': createTextureCanvas(256, 256, '#A52A2A', false),
+                'coin': createTextureCanvas(128, 128, '#FFD700', true),
+                'token': createTextureCanvas(128, 128, '#FFA500', true)
+            };
+            
+            // Save textures as blob URLs
+            for (const [name, canvas] of Object.entries(textures)) {
+                // Convert canvas to blob
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+                const url = URL.createObjectURL(blob);
+                
+                // Create a link to download the texture (for debugging)
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${name}.jpg`;
+                
+                // Store the URL in a global object for the TextureManager to use
+                window.textureURLs = window.textureURLs || {};
+                window.textureURLs[name] = url;
+                
+                console.log(`Created placeholder texture for ${name}: ${url}`);
+            }
+        }
+        
+        // Create a canvas with a texture pattern
+        function createTextureCanvas(width, height, baseColor, isPattern) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            
+            // Fill with base color
+            ctx.fillStyle = baseColor;
+            ctx.fillRect(0, 0, width, height);
+            
+            if (isPattern) {
+                // Add grid pattern
+                const gridSize = width / 16;
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.lineWidth = 1;
+                
+                for (let i = 0; i <= width; i += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(i, 0);
+                    ctx.lineTo(i, height);
+                    ctx.stroke();
+                }
+                
+                for (let i = 0; i <= height; i += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(width, i);
+                    ctx.stroke();
+                }
+            } else {
+                // Add some noise/texture
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+                for (let i = 0; i < 100; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    const size = Math.random() * 10 + 5;
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            return canvas;
+        }
+        
+        // Set up error handling
+        window.addEventListener('error', function(event) {
+            console.error('Error caught:', event.error);
+            const debugInfo = document.getElementById('debug-info');
+            if (debugInfo) {
+                debugInfo.style.display = 'block';
+                debugInfo.innerHTML += `<div>ERROR: ${event.message} at ${event.filename}:${event.lineno}</div>`;
+            }
+        });
+        
+        // Create placeholder textures when the page loads
+        try {
+            await createPlaceholderTextures();
+            console.log('Placeholder textures created successfully');
+        } catch (error) {
+            console.error('Error creating placeholder textures:', error);
+            const debugInfo = document.getElementById('debug-info');
+            if (debugInfo) {
+                debugInfo.style.display = 'block';
+                debugInfo.innerHTML += `<div>ERROR: ${error.message}</div>`;
             }
         }
     </script>
     <script type="module" src="main.js"></script>
-    <script type="module">
-        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/loaders/GLTFLoader.js';
-        window.GLTFLoad = GLTFLoader;
-    </script>
 </body>
 </html>

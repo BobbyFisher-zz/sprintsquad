@@ -8,106 +8,187 @@ export class PlayerController {
         this.scene = scene;
         this.mesh = null;
         this.isModelLoaded = false;
+        this.lastMoveDirection = 'forward'; // Initialize movement direction
+        this.boundingBoxHelper = null; // Add bounding box helper
+        this.showBoundingBox = false; // Hide bounding box visualization
+        console.log(`PlayerController initializing for ${type} with scene:`, scene);
+        
         this.loadPromise = new Promise((resolve) => {
-            const loader = new window.GLTFLoad();
+            console.log('Creating GLTFLoader for generic model');
+            const loader = new window.GLTFLoader();
+            
+            console.log('Loading generic model from path: models/generic_character.gltf');
             loader.load(
                 'models/generic_character.gltf',
                 (gltf) => {
+                    console.log('Generic model loaded successfully:', gltf);
                     this.mesh = gltf.scene;
-                    this.mesh.scale.set(1, 1, 1);
-                    this.mesh.position.y = 0.5;
+                    
+                    // Make sure the model is visible
+                    this.mesh.traverse(child => {
+                        if (child.isMesh) {
+                            console.log('Setting up generic mesh materials:', child);
+                            child.material.side = THREE.DoubleSide;
+                            // Keep original material colors
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+                    
+                    // Standardized size for all models
+                    this.mesh.scale.set(0.02, 0.02, 0.02);
+                    this.mesh.position.y = 0.02;
+                    
+                    // Rotate to face forward (negative z direction)
+                    this.mesh.rotation.y = Math.PI; // Rotate 180 degrees to face forward
+                    
+                    // Initialize animation properties
+                    this.runningCycle = 0;
+                    this.runningSpeed = 15; // Speed of running animation
+                    
                     this.isModelLoaded = true;
                     this.logger.log(`Loaded generic model for ${this.type}`);
+                    console.log(`Generic model loaded for ${this.type} at position:`, this.mesh.position);
                     resolve();
                 },
-                undefined,
+                (progress) => {
+                    console.log('Generic model loading progress:', progress);
+                },
                 (error) => {
                     console.error(`Error loading generic model for ${this.type}:`, error);
-                    resolve(); // Resolve even on error to avoid hanging
+                    // Fallback to a cube if model fails to load
+                    console.log(`Creating fallback cube for ${this.type}`);
+                    this.mesh = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.04, 0.04, 0.04),
+                        new THREE.MeshBasicMaterial({ color: 0x8B4513 })
+                    );
+                    this.mesh.position.y = 0.02;
+                    
+                    // Initialize animation properties
+                    this.runningCycle = 0;
+                    this.runningSpeed = 15; // Speed of running animation
+                    
+                    this.isModelLoaded = true;
+                    this.logger.log(`Fallback to cube for ${this.type} due to model loading error`);
+                    console.log(`Fallback cube created for ${this.type} at position:`, this.mesh.position);
+                    resolve();
                 }
             );
         });
 
-        this.speed = 7;
+        this.speed = 13.125;
         this.acceleration = 0.1;
-        this.jumpForce = 10;
         this.velocity = new THREE.Vector3();
-        this.isGrounded = true;
-        this.strafeSpeed = 5;
-        this.abilityCooldown = 10;
-        this.abilityTimer = 0;
-        this.isAbilityActive = false;
-        this.abilityEnabled = false;
-        this.tokenCount = 0;
+        this.strafeSpeed = 7.5;
         this.loggingEnabled = true;
-        this.isSliding = false;
-        this.hasBoosted = false;
         this.timeElapsed = 0;
         this.levelManager = null;
         console.log('PlayerController initialized with type:', this.type);
     }
 
-    // Check if model is loaded
     isReady() {
         return this.isModelLoaded;
     }
 
-    jump() {
+    // Add a method to update the rotation based on movement direction
+    updateRotation(delta) {
         if (!this.mesh) return;
-        if (this.isGrounded) {
-            this.velocity.y = this.jumpForce;
-            this.isGrounded = false;
-            this.hasBoosted = false;
-            this.logger.log(`Jumped! Velocity Y: ${this.velocity.y}, Position Y: ${this.mesh.position.y}, Is Grounded: ${this.isGrounded}`);
-        } else if (this.velocity.y > 0 && !this.isSliding && !this.hasBoosted) {
-            this.velocity.y += this.jumpForce * 0.02;
-            this.velocity.y = Math.min(this.velocity.y, this.jumpForce * 1.5);
-            this.hasBoosted = true;
-            this.logger.log(`Jump boosted! Velocity Y: ${this.velocity.y}, Position Y: ${this.mesh.position.y}`);
-        } else {
-            this.logger.log(`Cannot jump - not grounded or sliding. Position Y: ${this.mesh.position.y}, Is Grounded: ${this.isGrounded}, Is Sliding: ${this.isSliding}`);
-        }
-    }
-
-    useAbility(scene) {
-        if (!this.mesh) return;
-        if (this.abilityEnabled) {
-            this.logger.log(`Attempting to use ability for ${this.type}. Timer: ${this.abilityTimer}`);
-            if (this.abilityTimer <= 0) {
-                this.logger.log(`${this.type} ability activated!`);
-                this.isAbilityActive = true;
-                this.abilityTimer = this.abilityCooldown;
-
-                const shortcut = new THREE.Mesh(
-                    new THREE.BoxGeometry(1, 1, 1),
-                    new THREE.MeshPhongMaterial({ color: 0xFFFF00, emissive: 0xFFFF00 })
-                );
-                shortcut.position.set(this.mesh.position.x, 1, this.mesh.position.z - 20);
-                this.scene.add(shortcut);
-                this.logger.log(`Shortcut cube added at: ${JSON.stringify(shortcut.position)}`);
-
-                setTimeout(() => {
-                    this.scene.remove(shortcut);
-                    this.isAbilityActive = false;
-                    this.abilityEnabled = false;
-                    this.tokenCount = 0;
-                    progressBar.style.width = '0%';
-                    this.logger.log(`${this.type} ability ended.`);
-                }, 5000);
-            } else {
-                this.logger.log(`${this.type} ability on cooldown: ${this.abilityTimer}`);
-            }
-        } else {
-            this.logger.log(`Ability for ${this.type} not enabled (need 5 tokens).`);
+        
+        // If strafing left, rotate slightly left
+        if (this.lastMoveDirection === 'left') {
+            const targetRotation = Math.PI + Math.PI/6; // Slightly left
+            this.mesh.rotation.y = THREE.MathUtils.lerp(this.mesh.rotation.y, targetRotation, 5 * delta);
+        } 
+        // If strafing right, rotate slightly right
+        else if (this.lastMoveDirection === 'right') {
+            const targetRotation = Math.PI - Math.PI/6; // Slightly right
+            this.mesh.rotation.y = THREE.MathUtils.lerp(this.mesh.rotation.y, targetRotation, 5 * delta);
+        } 
+        // If moving forward, rotate back to center
+        else {
+            const targetRotation = Math.PI; // Forward
+            this.mesh.rotation.y = THREE.MathUtils.lerp(this.mesh.rotation.y, targetRotation, 5 * delta);
         }
     }
 
     checkCollision(object) {
         if (!this.mesh) return false;
+        
+        // Skip collision check with scene or camera
+        if (!object.isMesh || object === this.scene || object === this.mesh) {
+            return false;
+        }
+        
+        // Calculate distance between centers
+        const distance = this.mesh.position.distanceTo(object.position);
+        
+        // Skip collision check if objects are too far apart (optimization)
+        if (distance > 5) {
+            return false;
+        }
+        
+        // For collectibles, use a more generous collision detection
+        if (object.userData && (object.userData.type === 'coin')) {
+            // Use distance-based collision for collectibles
+            // Use the collision radius from userData if available, otherwise use default
+            const collisionRadius = object.userData.collisionRadius || 2.0;
+            const distance2D = new THREE.Vector2(this.mesh.position.x, this.mesh.position.z)
+                .distanceTo(new THREE.Vector2(object.position.x, object.position.z));
+            
+            // Use 2D distance (ignore Y axis) for more reliable collision
+            const isColliding = distance2D < collisionRadius;
+            
+            // Log collision checks
+            console.log(`Coin collision check: 2D distance=${distance2D.toFixed(2)}, 3D distance=${distance.toFixed(2)}, threshold=${collisionRadius}, result=${isColliding}`);
+            console.log(`Player position: x=${this.mesh.position.x.toFixed(2)}, y=${this.mesh.position.y.toFixed(2)}, z=${this.mesh.position.z.toFixed(2)}`);
+            console.log(`Coin position: x=${object.position.x.toFixed(2)}, y=${object.position.y.toFixed(2)}, z=${object.position.z.toFixed(2)}`);
+            
+            return isColliding;
+        }
+        
+        // For obstacles, use a more precise but forgiving collision detection
+        // Create a smaller bounding box for the player to prevent false collisions
         const pBox = new THREE.Box3().setFromObject(this.mesh);
-        const oBox = new THREE.Box3().setFromObject(object);
-        this.logger.log(`Checking collision - Player Box: ${JSON.stringify(pBox)}, Object Box: ${JSON.stringify(oBox)}, Player Pos: ${JSON.stringify(this.mesh.position)}, Object Pos: ${JSON.stringify(object.position)}`);
-        return pBox.intersectsBox(oBox);
+        
+        // Shrink the player's bounding box significantly to prevent false positives
+        const shrinkFactor = 0.5; // Increased from 0.2 to 0.5
+        pBox.min.x += shrinkFactor;
+        pBox.min.z += shrinkFactor;
+        pBox.max.x -= shrinkFactor;
+        pBox.max.z -= shrinkFactor;
+        
+        // Update the bounding box helper if it exists
+        if (this.boundingBoxHelper) {
+            this.scene.remove(this.boundingBoxHelper);
+        }
+        
+        if (this.showBoundingBox) {
+            this.boundingBoxHelper = new THREE.Box3Helper(pBox, 0xff0000);
+            this.scene.add(this.boundingBoxHelper);
+        }
+        
+        // Use custom collision box if available, otherwise create one from the object
+        let oBox;
+        if (object.userData && object.userData.collisionBox) {
+            oBox = object.userData.collisionBox;
+        } else {
+            oBox = new THREE.Box3().setFromObject(object);
+        }
+        
+        const intersects = pBox.intersectsBox(oBox);
+        
+        // Only log if objects are relatively close to avoid spam
+        if (distance < 3) {
+            this.logger.log(`Collision check: ${this.type} vs ${object.userData?.type || 'object'}`);
+            this.logger.log(`Player position: ${JSON.stringify(this.mesh.position)}`);
+            this.logger.log(`Object position: ${JSON.stringify(object.position)}`);
+            this.logger.log(`Distance between objects: ${distance}`);
+            this.logger.log(`Player box: min(${JSON.stringify(pBox.min)}), max(${JSON.stringify(pBox.max)})`);
+            this.logger.log(`Object box: min(${JSON.stringify(oBox.min)}), max(${JSON.stringify(oBox.max)})`);
+            this.logger.log(`Intersection result: ${intersects}`);
+        }
+        
+        return intersects;
     }
 
     update(camera, actions, obstacles, barriers, scene, gameState, delta, logger) {
@@ -116,70 +197,55 @@ export class PlayerController {
         const prevX = this.mesh.position.x;
         const prevZ = this.mesh.position.z;
 
+        // Track movement direction for rotation
+        if (actions.strafeLeft) {
+            this.lastMoveDirection = 'left';
+        } else if (actions.strafeRight) {
+            this.lastMoveDirection = 'right';
+        } else {
+            this.lastMoveDirection = 'forward';
+        }
+        
+        // Update rotation based on movement
+        this.updateRotation(delta);
+
+        // Animate running motion
+        if (this.mesh && !gameState.gameOver) {
+            // Update running cycle
+            this.runningCycle += delta * this.runningSpeed;
+            
+            // Apply running animation - bob up and down slightly
+            const verticalOffset = Math.sin(this.runningCycle) * 0.005;
+            this.mesh.position.y = 0.02 + verticalOffset;
+            
+            // Add slight forward/backward tilt for running effect
+            const tiltAmount = Math.sin(this.runningCycle) * 0.1;
+            this.mesh.rotation.x = tiltAmount;
+            
+            // Add slight side-to-side sway
+            if (!actions.strafeLeft && !actions.strafeRight) {
+                const swayAmount = Math.sin(this.runningCycle / 2) * 0.05;
+                this.mesh.rotation.z = swayAmount;
+            }
+        }
+
         this.timeElapsed += delta;
         this.speed += this.acceleration * delta;
         logger.log(`Speed updated: ${this.speed.toFixed(2)} at time ${this.timeElapsed.toFixed(2)}s`);
 
-        logger.log(`Delta: ${delta}`);
-        this.velocity.y -= 15 * delta;
-        this.mesh.position.y += this.velocity.y * delta;
-        logger.log(`Position update - Velocity Y: ${this.velocity.y.toFixed(3)}, Position Y: ${this.mesh.position.y.toFixed(3)}, Mesh Y: ${this.mesh.position.y.toFixed(3)}`);
-
-        let isOnPlatform = false;
-        if (this.mesh.position.y <= 0.51 && this.velocity.y <= 0 && !this.isSliding) {
-            this.mesh.position.y = 0.5;
-            this.isGrounded = true;
-            this.velocity.y = 0;
-            this.hasBoosted = false;
-            logger.log(`Grounded! Position Y: ${this.mesh.position.y}, Is Grounded: ${this.isGrounded}`);
-        }
-        const platforms = this.getPlatforms();
-        platforms.forEach(function(platform) {
-            const pBox = new THREE.Box3().setFromObject(platform);
-            const playerBox = new THREE.Box3().setFromObject(this.mesh);
-            if (this.velocity.y <= 0 && playerBox.min.y <= platform.position.y + 0.5 && playerBox.max.y >= platform.position.y + 0.5 && pBox.intersectsBox(playerBox)) {
-                this.mesh.position.y = platform.position.y + 0.75;
-                this.isGrounded = true;
-                this.velocity.y = 0;
-                this.hasBoosted = false;
-                isOnPlatform = true;
-                logger.log(`Landed on platform at: ${JSON.stringify(platform.position)}`);
-            }
-        }.bind(this));
-
         this.mesh.position.z -= this.speed * delta;
-
-        if (actions.jump && (this.isGrounded || isOnPlatform)) {
-            logger.log(`Jump action triggered, Is Grounded: ${this.isGrounded}, Is On Platform: ${isOnPlatform}`);
-            this.jump();
-        }
 
         if (actions.strafeLeft) {
             this.logger.log(`Strafing left, Position X: ${this.mesh.position.x}`);
             this.mesh.position.x -= this.strafeSpeed * delta;
+            // Restrict to track width (track is 20 units wide, centered at 0)
+            this.mesh.position.x = Math.max(this.mesh.position.x, -9);
         }
         if (actions.strafeRight) {
             this.logger.log(`Strafing right, Position X: ${this.mesh.position.x}`);
             this.mesh.position.x += this.strafeSpeed * delta;
-        }
-
-        if (actions.slide) {
-            this.isSliding = true;
-            this.logger.log(`Slide triggered, Is Sliding: ${this.isSliding}`);
-            this.mesh.scale.y = 0.5;
-            this.mesh.position.y = 0.25;
-        } else {
-            this.isSliding = false;
-            this.mesh.scale.y = 1;
-        }
-
-        if (actions.useAbility && !this.isAbilityActive) {
-            logger.log('Use ability triggered in PlayerController');
-            this.useAbility(scene);
-        }
-
-        if (this.abilityTimer > 0) {
-            this.abilityTimer -= delta;
+            // Restrict to track width (track is 20 units wide, centered at 0)
+            this.mesh.position.x = Math.min(this.mesh.position.x, 9);
         }
 
         barriers.forEach(barrier => {
@@ -190,44 +256,80 @@ export class PlayerController {
 
         obstacles.forEach(obstacle => {
             if (this.checkCollision(obstacle)) {
-                this.mesh.position.z = prevZ;
-                if (!this.canBreakObstacles || obstacle.material.color.getHex() !== 0xff0000) {
-                    this.speed = 0;
-                    logger.log('Hit obstacle! Game Over.');
-                    this.loggingEnabled = false;
-                    logger.setLoggingEnabled(false);
-                    gameState.gameOver = true;
+                // Always die when colliding with any obstacle
+                this.speed = 0;
+                logger.log('Hit obstacle! Game Over.');
+                this.loggingEnabled = false;
+                logger.setLoggingEnabled(false);
+                gameState.gameOver = true;
+                
+                // Stop background music
+                if (window.audioManager) {
+                    window.audioManager.pauseMusic();
+                }
+                
+                // Play game over sound
+                if (window.audioManager) {
+                    window.audioManager.playSound('game_over');
                 }
             }
         });
 
         const collectibles = this.getCollectibles();
-        this.logger.log(`Checking collectibles, count: ${collectibles.length}, contents: ${JSON.stringify(collectibles.map(c => ({ pos: c.position, type: c.userData.type })))}`);
-        collectibles.forEach(function(collectible) {
+        this.logger.log(`Checking collectibles, count: ${collectibles.length}`);
+        
+        // Process collectibles
+        for (let i = collectibles.length - 1; i >= 0; i--) {
+            const collectible = collectibles[i];
+            
+            // Skip if already processed
+            if (!collectible || !collectible.parent) continue;
+            
             if (this.checkCollision(collectible)) {
-                const value = collectible.userData.value;
-                const type = collectible.userData.type;
-                const character = collectible.userData.character;
-                this.logger.log(`Collision detected with ${type} at ${JSON.stringify(collectible.position)}, player at ${JSON.stringify(this.mesh.position)}`);
-                this.logger.log(`Collectible type: ${type}, character: ${character}, player type: ${this.type}`);
+                const value = collectible.userData.value || 10;
+                const type = collectible.userData.type || 'coin';
+                
+                console.log(`COLLISION DETECTED with ${type} at position:`, collectible.position);
+                
+                // Remove from scene
                 this.scene.remove(collectible);
-                this.levelManager.collectibles = this.levelManager.collectibles.filter(c => c !== collectible);
-                if (type === 'coin') {
-                    score += value;
-                    this.logger.log(`Collected coin worth ${value} points, new score: ${score}`);
-                } else if (type === 'token' && character.toLowerCase() === this.type.toLowerCase()) {
-                    this.tokenCount += 1;
-                    progressBar.style.width = `${(this.tokenCount / 5) * 100}%`;
-                    this.logger.log(`Token collected for ${this.type}, count: ${this.tokenCount}`);
-                    if (this.tokenCount >= 5) {
-                        this.abilityEnabled = true;
-                        this.logger.log(`Ability enabled for ${this.type} with 5 tokens!`);
-                    }
-                } else {
-                    this.logger.log(`Token not collected: character ${character} does not match player type ${this.type}`);
+                
+                // Remove from collectibles array
+                if (this.levelManager) {
+                    this.levelManager.collectibles = this.levelManager.collectibles.filter(c => c !== collectible);
                 }
+                
+                // Update score
+                if (typeof window.score !== 'undefined') {
+                    window.score += value;
+                    console.log(`Score updated: ${window.score}`);
+                }
+                
+                // Play sound
+                if (window.audioManager) {
+                    window.audioManager.playSound('coin');
+                    console.log('Playing coin sound via audioManager');
+                } else {
+                    try {
+                        console.log('Playing coin sound directly');
+                        const coinSound = new Audio('sounds/coin.mp3');
+                        coinSound.volume = 0.5;
+                        coinSound.play().catch(e => console.error('Error playing coin sound:', e));
+                    } catch (error) {
+                        console.error('Failed to play coin sound:', error);
+                    }
+                }
+                
+                // Update UI
+                const scoreDisplay = document.getElementById('scoreDisplay');
+                if (scoreDisplay) {
+                    scoreDisplay.innerText = `Score: ${window.score}`;
+                }
+                
+                // Visual effect
+                this.createCoinCollectionEffect(collectible.position);
             }
-        }.bind(this));
+        }
     }
 
     setLevelManager(levelManager) {
@@ -244,5 +346,63 @@ export class PlayerController {
 
     downloadLog() {
         this.logger.downloadLog();
+    }
+
+    // Add a new method for visual feedback when collecting coins
+    createCoinCollectionEffect(position) {
+        // Create a simple particle effect at the coin's position
+        const particleCount = 10;
+        const particles = [];
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particle = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1, 8, 8),
+                new THREE.MeshBasicMaterial({ color: 0xFFD700 }) // Gold color
+            );
+            
+            // Position at the coin's location
+            particle.position.copy(position);
+            
+            // Add random velocity
+            particle.velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 2,
+                Math.random() * 3,
+                (Math.random() - 0.5) * 2
+            );
+            
+            this.scene.add(particle);
+            particles.push(particle);
+        }
+        
+        // Animate particles
+        const animateParticles = () => {
+            let allRemoved = true;
+            
+            particles.forEach((particle, index) => {
+                if (particle) {
+                    allRemoved = false;
+                    
+                    // Move particle
+                    particle.position.x += particle.velocity.x * 0.1;
+                    particle.position.y += particle.velocity.y * 0.1;
+                    particle.position.z += particle.velocity.z * 0.1;
+                    
+                    // Apply gravity
+                    particle.velocity.y -= 0.1;
+                    
+                    // Remove if too far
+                    if (particle.position.y < 0) {
+                        this.scene.remove(particle);
+                        particles[index] = null;
+                    }
+                }
+            });
+            
+            if (!allRemoved) {
+                requestAnimationFrame(animateParticles);
+            }
+        };
+        
+        animateParticles();
     }
 }

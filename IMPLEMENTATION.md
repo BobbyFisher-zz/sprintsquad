@@ -158,30 +158,4 @@
 - Play SFX on events (jump, ability, collectible).  
 
 ### Deliverable  
-- *Sprint Squad* looks and sounds like the GDD vision—playable polish!  
-
----
-
-## MVP 8: Progression & Final Touches  
-**Objective:** Add level progression and wrap V1.  
-**Duration Estimate:** 3-4 days  
-**Builds On:** MVP 7  
-
-### Features  
-- **Progression:** Target times to “unlock” next level (reset with harder spawns).  
-- **UI:** Score display, “Level Complete” screen.  
-- **Cosmetics:** Basic skin unlock (e.g., color swap) via coins.  
-
-### Tasks  
-- Set target times per level (e.g., 30s), reset with increased difficulty.  
-- Update UI: Add score and completion `<div>`s.  
-- Implement cosmetics: Toggle material color based on coin count.  
-
-### Deliverable  
-- Full V1 game: Playable, polished, with progression—ready for the kids!  
-
-
-## To Fix
-- Coins sometimes generate on top or apart of crates.
-- Scoring needs to be just for collecting coins. 
-- Tokens should enable the ability to use the special abiltiies of the character. Example: collect 5 tokens, enable special ability. There should be a progress bar for that at the bottom of the screen. 
+- *Sprint Squad* looks and sounds like the GDD vision—playable polish! 
