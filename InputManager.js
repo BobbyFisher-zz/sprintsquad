@@ -10,13 +10,24 @@ export class InputManager {
             slide: false,
             useAbility: false
         };
+        this.keysPressed = {};
         this.setupKeyboard();
         this.setupTouchControls();
+        this.logger.log('InputManager initialized');
     }
 
     setupKeyboard() {
         const handleKeydown = (e) => {
-            this.logger.log(`Keydown event: ${e.key}`);
+            this.keysPressed[e.key] = true;
+            
+            // Toggle bounding boxes with 'b' key
+            if (e.key === 'b') {
+                // Create a custom event to toggle bounding boxes
+                const toggleEvent = new CustomEvent('toggleBoundingBoxes');
+                window.dispatchEvent(toggleEvent);
+                this.logger.log('Toggle bounding boxes event dispatched');
+            }
+            
             switch (e.key) {
                 case 'ArrowUp':
                 case 'w':
@@ -46,6 +57,7 @@ export class InputManager {
         };
 
         const handleKeyup = (e) => {
+            this.keysPressed[e.key] = false;
             this.logger.log(`Keyup event: ${e.key}`);
             switch (e.key) {
                 case 'ArrowUp':

@@ -1,29 +1,70 @@
 export class Logger {
     constructor() {
         this.logs = [];
+        this.maxLogs = 1000;
+        this.debugMode = false;
         this.loggingEnabled = true;
-    }
-
-    setLoggingEnabled(enabled) {
-        this.loggingEnabled = enabled;
-    }
-
-    log(message) {
-        if (this.loggingEnabled) {
-            const timestamp = new Date().toISOString();
-            this.logs.push(`[${timestamp}] ${message}`);
+        
+        // Check if debug mode is enabled via URL parameter
+        if (window.location.search.includes('debug=true')) {
+            this.debugMode = true;
+            console.log('Debug mode enabled');
         }
     }
-
+    
+    setLoggingEnabled(enabled) {
+        this.loggingEnabled = enabled;
+        if (!enabled) {
+            console.log('Logging disabled');
+        } else {
+            console.log('Logging enabled');
+        }
+    }
+    
+    log(message) {
+        // Skip logging if disabled
+        if (!this.loggingEnabled) {
+            return;
+        }
+        
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            timestamp,
+            message
+        };
+        
+        this.logs.push(logEntry);
+        
+        // Trim logs if they exceed the maximum
+        if (this.logs.length > this.maxLogs) {
+            this.logs.shift();
+        }
+        
+        // Output to console in debug mode
+        if (this.debugMode) {
+            console.log(`[${timestamp}] ${message}`);
+        }
+    }
+    
+    getLogs() {
+        return this.logs;
+    }
+    
+    clearLogs() {
+        this.logs = [];
+    }
+    
     downloadLog() {
-        const blob = new Blob([this.logs.join('\n')], { type: 'text/plain' });
+        const logText = this.logs.map(entry => `[${entry.timestamp}] ${entry.message}`).join('\n');
+        const blob = new Blob([logText], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'sprint-squad-log.txt';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `game-log-${new Date().toISOString()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
 }
